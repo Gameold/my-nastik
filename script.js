@@ -1,18 +1,64 @@
-// Настройки холста — адаптируемся под экран телефона
+// Настройки холста
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// Функция для установки размеров под экран
+// ID твоей таблицы рекордов (тот самый код, который указал)
+const LEADERBOARD_ID = 'score';
+
+// Функция для сохранения рекорда в VK
+async function saveScoreToLeaderboard(score) {
+    try {
+        // Отправляем результат в таблицу лидеров VK
+        const result = await vkBridge.send("VKWebAppAddToLeaderboard", {
+            score: Math.floor(score),  // Целое число очков
+            leaderboard_id: LEADERBOARD_ID
+        });
+        console.log('✅ Рекорд сохранён!', result);
+        return true;
+    } catch (error) {
+        console.error('❌ Ошибка сохранения рекорда:', error);
+        return false;
+    }
+}
+
+// Функция для показа таблицы рекордов
+async function showLeaderboard() {
+    try {
+        await vkBridge.send("VKWebAppShowLeaderboard", {
+            leaderboard_id: LEADERBOARD_ID
+        });
+    } catch (error) {
+        console.error('❌ Ошибка открытия таблицы:', error);
+        // Если не открылась, показываем уведомление
+        vkBridge.send("VKWebAppShowNativeAds", {
+            ad_format: "interstitial"
+        }).catch(() => {});
+    }
+}
+
+// Функция для получения лучшего результата игрока
+async function getBestScore() {
+    try {
+        const data = await vkBridge.send("VKWebAppGetLeaderboardExtended", {
+            leaderboard_id: LEADERBOARD_ID,
+            count: 1  // Берём только результат текущего пользователя
+        });
+        if (data.users && data.users.length > 0) {
+            return data.users[0].score;
+        }
+    } catch (error) {
+        console.error('Ошибка получения рекорда:', error);
+    }
+    return 0;
+}
+
+// Размеры холста
 function resizeCanvas() {
     const container = canvas.parentElement;
     const maxWidth = Math.min(window.innerWidth - 48, 450);
     canvas.style.width = `${maxWidth}px`;
-    
-    // Соотношение сторон 3:4 (вертикальный формат)
     const canvasHeight = maxWidth * 1.33;
     canvas.style.height = `${canvasHeight}px`;
-    
-    // Реальные размеры для рисования
     canvas.width = 600;
     canvas.height = 800;
 }
@@ -21,12 +67,11 @@ function resizeCanvas() {
 let gameRunning = true;
 let gameOverAnimation = false;
 let score = 0;
+let highScore = 0;
 
-// Позиции персонажей (адаптированы под вертикальный экран)
 let girlX = 150;
 let momX = 50;
 
-// Девочка
 const girl = {
     x: 150,
     y: 620,
@@ -40,32 +85,40 @@ const girl = {
     state: 'run'
 };
 
-// Препятствия
 let obstacles = [];
 let obstacleCooldown = 0;
 
-// Анимация
 let girlCurrentFrame = 0;
 let girlAnimationCounter = 0;
 const GIRL_RUN_FRAMES = 4;
 
-// Функция прыжка
+// Загружаем лучший результат игрока при старте
+async function loadHighScore() {
+    highScore = await getBestScore();
+    console.log('🏆 Твой лучший результат:', highScore);
+}
+
 function jump() {
     if (!gameRunning || gameOverAnimation) return;
     if (!girl.isJumping && girl.y >= girl.groundY) {
         girl.yVelocity = girl.jumpPower;
         girl.isJumping = true;
         girl.state = 'jump';
-        
-        // Вибрация на телефоне (если есть)
         if (navigator.vibrate) navigator.vibrate(20);
     }
 }
 
-// Сброс игры
-function resetGame() {
+async function resetGame() {
     gameRunning = true;
     gameOverAnimation = false;
+    
+    // Сохраняем рекорд, если текущий счёт лучше
+    const currentScoreInt = Math.floor(score);
+    if (currentScoreInt > highScore) {
+        await saveScoreToLeaderboard(currentScoreInt);
+        highScore = currentScoreInt;
+    }
+    
     score = 0;
     momX = 50;
     obstacles = [];
@@ -90,6 +143,10 @@ function updateUI() {
     document.getElementById('score').textContent = Math.floor(score);
     let distancePercent = Math.min(100, Math.max(0, ((girl.x - momX - 30) / 120) * 100));
     document.getElementById('distance').textContent = Math.floor(distancePercent);
+    
+    // Показываем лучший рекорд в заголовке
+    const highScoreElem = document.getElementById('highScore');
+    if (highScoreElem) highScoreElem.textContent = highScore;
 }
 
 function checkCollisions() {
@@ -103,6 +160,13 @@ function checkCollisions() {
             gameOverAnimation = true;
             girl.state = 'fall';
             if (navigator.vibrate) navigator.vibrate(200);
+            
+            // Сохраняем рекорд при проигрыше
+            const finalScore = Math.floor(score);
+            if (finalScore > highScore) {
+                saveScoreToLeaderboard(finalScore);
+                highScore = finalScore;
+            }
             return;
         }
     }
@@ -111,14 +175,12 @@ function checkCollisions() {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Небо с градиентом
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
     gradient.addColorStop(0, '#87CEEB');
     gradient.addColorStop(0.6, '#E0F7FA');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Облака
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.beginPath();
     ctx.ellipse(80, 80, 50, 35, 0, 0, Math.PI*2);
@@ -131,19 +193,16 @@ function draw() {
     ctx.ellipse(430, 105, 40, 28, 0, 0, Math.PI*2);
     ctx.fill();
     
-    // Земля
     ctx.fillStyle = '#8B5A2B';
     ctx.fillRect(0, 670, canvas.width, 130);
     ctx.fillStyle = '#6B8E23';
     ctx.fillRect(0, 665, canvas.width, 15);
     
-    // Трава
     ctx.fillStyle = '#228B22';
     for(let i = 0; i < 15; i++) {
         ctx.fillRect(i * 45, 655, 3, 15);
     }
     
-    // Препятствия
     ctx.fillStyle = '#8B4513';
     for (let obs of obstacles) {
         ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
@@ -152,7 +211,6 @@ function draw() {
         ctx.fillStyle = '#8B4513';
     }
     
-    // Мама
     if (gameOverAnimation && !gameRunning) {
         ctx.fillStyle = '#DC143C';
         ctx.fillRect(momX, 610, 50, 65);
@@ -175,7 +233,6 @@ function draw() {
         ctx.fillRect(momX + 28, 600, 6, 6);
     }
     
-    // Девочка
     if (girl.state === 'jump') {
         ctx.fillStyle = '#FF69B4';
         ctx.fillRect(girl.x, girl.y, girl.width, girl.height);
@@ -190,7 +247,6 @@ function draw() {
         ctx.fillRect(girl.x, girl.y + 15, girl.width, girl.height);
         ctx.fillStyle = '#FFB6C1';
         ctx.fillRect(girl.x + 8, girl.y + 5, 28, 14);
-        ctx.fillStyle = '💧';
     } else {
         ctx.fillStyle = '#FF69B4';
         ctx.fillRect(girl.x, girl.y, girl.width, girl.height);
@@ -201,7 +257,6 @@ function draw() {
         ctx.fillStyle = '#FFA500';
         ctx.fillRect(girl.x + 15, girl.y + 38, 15, 7);
         
-        // Анимация бега
         girlAnimationCounter++;
         if (girlAnimationCounter > 8) {
             girlAnimationCounter = 0;
@@ -214,15 +269,16 @@ function draw() {
         }
     }
     
-    // Game Over
     if (!gameRunning && !gameOverAnimation) {
-        ctx.font = 'bold 40px system-ui';
+        ctx.font = 'bold 36px system-ui';
         ctx.fillStyle = '#FF0000';
-        ctx.shadowBlur = 0;
-        ctx.fillText('GAME OVER', canvas.width/2 - 120, canvas.height/2 - 50);
-        ctx.font = '24px system-ui';
+        ctx.fillText('GAME OVER', canvas.width/2 - 110, canvas.height/2 - 50);
+        ctx.font = '20px system-ui';
         ctx.fillStyle = '#333';
-        ctx.fillText('Мама догнала!', canvas.width/2 - 85, canvas.height/2 + 20);
+        ctx.fillText('Мама догнала!', canvas.width/2 - 75, canvas.height/2 + 20);
+        ctx.font = '18px system-ui';
+        ctx.fillStyle = '#666';
+        ctx.fillText(`Твой счёт: ${Math.floor(score)}`, canvas.width/2 - 80, canvas.height/2 + 70);
     }
     
     if (gameOverAnimation) {
@@ -250,7 +306,6 @@ function updateGame() {
         return;
     }
     
-    // Физика прыжка
     if (girl.isJumping) {
         girl.yVelocity += girl.gravity;
         girl.y += girl.yVelocity;
@@ -263,7 +318,6 @@ function updateGame() {
         }
     }
     
-    // Движение препятствий
     for (let i = 0; i < obstacles.length; i++) {
         obstacles[i].x -= 6;
         if (obstacles[i].x + obstacles[i].width < 0) {
@@ -272,7 +326,6 @@ function updateGame() {
         }
     }
     
-    // Генерация препятствий
     if (obstacleCooldown <= 0 && gameRunning) {
         if (Math.random() < 0.028) {
             spawnObstacle();
@@ -288,18 +341,48 @@ function updateGame() {
     draw();
 }
 
-// Обработка касаний в любом месте экрана (кроме кнопки)
 function handleTap(e) {
-    // Проверяем, не нажата ли кнопка
     let target = e.target;
     if (target.id === 'resetBtn') return;
+    if (target.id === 'leaderboardBtn') return;
     if (target.tagName === 'BUTTON') return;
     
     e.preventDefault();
     jump();
 }
 
-// События для мобильных и ПК
+// Кнопка таблицы рекордов
+function addLeaderboardButton() {
+    const resetBtn = document.getElementById('resetBtn');
+    const leaderboardBtn = document.createElement('button');
+    leaderboardBtn.id = 'leaderboardBtn';
+    leaderboardBtn.innerHTML = '🏆 Рекорды';
+    leaderboardBtn.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+    leaderboardBtn.style.marginLeft = '12px';
+    leaderboardBtn.style.padding = '14px 28px';
+    leaderboardBtn.style.borderRadius = '50px';
+    leaderboardBtn.style.fontSize = '18px';
+    leaderboardBtn.style.fontWeight = 'bold';
+    leaderboardBtn.style.border = 'none';
+    leaderboardBtn.style.color = 'white';
+    leaderboardBtn.style.cursor = 'pointer';
+    
+    leaderboardBtn.addEventListener('click', () => {
+        showLeaderboard();
+    });
+    leaderboardBtn.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        showLeaderboard();
+    });
+    
+    const buttonsContainer = document.querySelector('.buttons-container');
+    if (buttonsContainer) {
+        buttonsContainer.appendChild(leaderboardBtn);
+    } else {
+        resetBtn.parentNode.insertBefore(leaderboardBtn, resetBtn.nextSibling);
+    }
+}
+
 canvas.addEventListener('touchstart', handleTap, { passive: false });
 canvas.addEventListener('mousedown', handleTap);
 window.addEventListener('keydown', (e) => {
@@ -309,25 +392,23 @@ window.addEventListener('keydown', (e) => {
     }
 });
 
-// Кнопка сброса
 document.getElementById('resetBtn').addEventListener('click', resetGame);
 document.getElementById('resetBtn').addEventListener('touchstart', (e) => {
     e.stopPropagation();
     resetGame();
 });
 
-// Адаптация под размер экрана
 window.addEventListener('resize', () => {
     resizeCanvas();
-    resizeCanvas(); // повтор для точности
+    resizeCanvas();
 });
 resizeCanvas();
 
-// Инициализация VK
 vkBridge.send('VKWebAppInit')
     .then(() => console.log('✅ VK Bridge инициализирован'))
     .catch(err => console.error('❌ Ошибка VK Bridge:', err));
 
-// Запуск
+loadHighScore();
+addLeaderboardButton();
 resetGame();
 setInterval(updateGame, 1000 / 60);
