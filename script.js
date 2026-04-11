@@ -10,28 +10,30 @@ canvas.height = 400;
 let gameRunning = true;
 let score = 0;
 let frame = 0;
-let distanceToMom = 100; // 100% - мама далеко, 0% - догнала
 
-// Девочка
+// Позиции персонажей (теперь мама реально бежит сзади)
+let girlX = 150;        // Девочка всегда на одной позиции по X
+let momX = 50;          // Мама сзади (меньше X - значит позади)
+let momSpeed = 1.2;     // Скорость мамы (будет расти)
+let distanceToMom = 100; // Для отображения процентов
+
+// Девочка (прыжки)
 const girl = {
-    x: 100,
-    y: 300,
+    x: 150,
+    y: 330,
     width: 30,
     height: 40,
     yVelocity: 0,
     isJumping: false,
     gravity: 0.8,
-    jumpPower: -12,
+    jumpPower: -11,
     groundY: 330
 };
 
 // Препятствия
 let obstacles = [];
 
-// Мама (погоня)
-let momX = 600; // позиция мамы на дороге
-
-// Счётчик кадров для генерации препятствий
+// Счётчик для генерации препятствий
 let obstacleCooldown = 0;
 
 // Функция прыжка
@@ -48,8 +50,9 @@ function resetGame() {
     gameRunning = true;
     score = 0;
     frame = 0;
+    momX = 50;                    // Мама сзади
+    momSpeed = 1.2;               // Начальная скорость
     distanceToMom = 100;
-    momX = 600;
     obstacles = [];
     girl.y = girl.groundY;
     girl.yVelocity = 0;
@@ -72,7 +75,11 @@ function spawnObstacle() {
 // Обновление UI
 function updateUI() {
     document.getElementById('score').textContent = Math.floor(score);
-    document.getElementById('distance').textContent = Math.max(0, Math.floor(distanceToMom));
+    // Расчёт процентов: 100% когда мама далеко (X=50), 0% когда догнала (X=girlX-30)
+    let maxDistance = 130; // girlX=150, momX=20 - минимальная
+    let currentDistance = girl.x - momX - 30;
+    let percent = Math.min(100, Math.max(0, (currentDistance / 120) * 100));
+    document.getElementById('distance').textContent = Math.floor(percent);
 }
 
 // Проверка столкновений
@@ -84,14 +91,14 @@ function checkCollisions() {
             girl.x + girl.width > obs.x &&
             girl.y + girl.height > obs.y &&
             girl.y < obs.y + obs.height) {
-            // Столкновение с препятствием - девочка споткнулась
+            // Споткнулась! Мама мгновенно догоняет
             gameRunning = false;
             return;
         }
     }
     
-    // Проверка, догнала ли мама (расстояние <= 0)
-    if (distanceToMom <= 0) {
+    // Проверка, догнала ли мама физически
+    if (momX + 35 >= girl.x - 10) {
         gameRunning = false;
     }
 }
@@ -106,16 +113,6 @@ function draw() {
     ctx.fillStyle = '#6B8E23';
     ctx.fillRect(0, 355, canvas.width, 10);
     
-    // Девочка
-    ctx.fillStyle = '#FF69B4';
-    ctx.fillRect(girl.x, girl.y, girl.width, girl.height);
-    ctx.fillStyle = '#FFB6C1';
-    ctx.fillRect(girl.x + 5, girl.y - 10, 20, 10); // волосы
-    ctx.fillStyle = '#000';
-    ctx.fillRect(girl.x + 22, girl.y + 10, 4, 4); // глаз
-    ctx.fillStyle = '#FFA500';
-    ctx.fillRect(girl.x + 10, girl.y + 25, 10, 5); // карман
-    
     // Препятствия
     ctx.fillStyle = '#8B4513';
     for (let obs of obstacles) {
@@ -125,17 +122,26 @@ function draw() {
         ctx.fillStyle = '#8B4513';
     }
     
-    // Мама с ремнём
-    const momDrawX = canvas.width - (canvas.width * (distanceToMom / 100));
+    // Мама с ремнём (бежит сзади)
     ctx.fillStyle = '#4A4A4A';
-    ctx.fillRect(momDrawX, 320, 35, 45);
+    ctx.fillRect(momX, 320, 35, 45);
     ctx.fillStyle = '#2C2C2C';
-    ctx.fillRect(momDrawX + 5, 310, 25, 12); // голова
+    ctx.fillRect(momX + 5, 310, 25, 12);
     ctx.fillStyle = '#8B0000';
-    ctx.fillRect(momDrawX - 10, 330, 15, 5); // ремень
+    ctx.fillRect(momX - 10, 330, 15, 5);
     ctx.fillStyle = '#FFF';
-    ctx.fillRect(momDrawX + 12, 315, 4, 4);
-    ctx.fillRect(momDrawX + 20, 315, 4, 4);
+    ctx.fillRect(momX + 12, 315, 4, 4);
+    ctx.fillRect(momX + 20, 315, 4, 4);
+    
+    // Девочка (всегда впереди)
+    ctx.fillStyle = '#FF69B4';
+    ctx.fillRect(girl.x, girl.y, girl.width, girl.height);
+    ctx.fillStyle = '#FFB6C1';
+    ctx.fillRect(girl.x + 5, girl.y - 10, 20, 10);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(girl.x + 22, girl.y + 10, 4, 4);
+    ctx.fillStyle = '#FFA500';
+    ctx.fillRect(girl.x + 10, girl.y + 25, 10, 5);
     
     // Текст "Game Over"
     if (!gameRunning) {
@@ -143,9 +149,9 @@ function draw() {
         ctx.fillStyle = '#FF0000';
         ctx.shadowBlur = 0;
         ctx.fillText('GAME OVER', canvas.width/2 - 100, canvas.height/2);
-        ctx.font = '20px system-ui';
+        ctx.font = '18px system-ui';
         ctx.fillStyle = '#333';
-        ctx.fillText('Мама догнала!', canvas.width/2 - 70, canvas.height/2 + 50);
+        ctx.fillText('Мама догнала!', canvas.width/2 - 60, canvas.height/2 + 50);
     }
     
     // Облачка
@@ -165,7 +171,7 @@ function updateGame() {
         return;
     }
     
-    // Физика прыжка
+    // Физика прыжка девочки
     if (girl.isJumping) {
         girl.yVelocity += girl.gravity;
         girl.y += girl.yVelocity;
@@ -176,6 +182,11 @@ function updateGame() {
             girl.yVelocity = 0;
         }
     }
+    
+    // Мама бежит сзади (увеличиваем скорость со временем)
+    momX += momSpeed;
+    // Чем больше счёт, тем быстрее мама
+    momSpeed = 1.2 + (score / 800);
     
     // Движение препятствий
     for (let i = 0; i < obstacles.length; i++) {
@@ -188,21 +199,16 @@ function updateGame() {
     
     // Генерация препятствий
     if (obstacleCooldown <= 0 && gameRunning) {
-        if (Math.random() < 0.02) { // 2% шанс каждый кадр
+        if (Math.random() < 0.025) {
             spawnObstacle();
-            obstacleCooldown = 40 + Math.random() * 30;
+            obstacleCooldown = 45 + Math.random() * 35;
         }
     } else {
         obstacleCooldown--;
     }
     
-    // Мама приближается (чем дальше забежала, тем быстрее)
-    const momSpeed = 0.08 + (score / 2000);
-    distanceToMom -= momSpeed;
-    if (distanceToMom < 0) distanceToMom = 0;
-    
     // Начисление очков за выживание
-    score += 0.2;
+    score += 0.25;
     
     // Проверка столкновений
     checkCollisions();
@@ -244,4 +250,4 @@ vkBridge.send('VKWebAppInit')
 
 // Запуск игры
 resetGame();
-setInterval(updateGame, 1000 / 60); // 60 FPS
+setInterval(updateGame, 1000 / 60);
