@@ -8,11 +8,12 @@ canvas.height = 400;
 
 // Игровые переменные
 let gameRunning = true;
+let gameOverAnimation = false; // Режим анимации проигрыша
 let score = 0;
 
 // Позиции персонажей
-let girlX = 150;        // Девочка
-let momX = 50;          // Мама всегда сзади (на фиксированном расстоянии)
+let girlX = 150;
+let momX = 50;
 
 // Девочка (прыжки)
 const girl = {
@@ -29,13 +30,11 @@ const girl = {
 
 // Препятствия
 let obstacles = [];
-
-// Счётчик для генерации препятствий
 let obstacleCooldown = 0;
 
 // Функция прыжка
 function jump() {
-    if (!gameRunning) return;
+    if (!gameRunning || gameOverAnimation) return;
     if (!girl.isJumping && girl.y >= girl.groundY) {
         girl.yVelocity = girl.jumpPower;
         girl.isJumping = true;
@@ -45,7 +44,9 @@ function jump() {
 // Сброс игры
 function resetGame() {
     gameRunning = true;
+    gameOverAnimation = false;
     score = 0;
+    momX = 50;
     obstacles = [];
     girl.y = girl.groundY;
     girl.yVelocity = 0;
@@ -67,8 +68,8 @@ function spawnObstacle() {
 // Обновление UI
 function updateUI() {
     document.getElementById('score').textContent = Math.floor(score);
-    // Расстояние до мамы всегда 100% (она не приближается)
-    document.getElementById('distance').textContent = "100";
+    let distancePercent = Math.min(100, Math.max(0, ((girl.x - momX - 30) / 120) * 100));
+    document.getElementById('distance').textContent = Math.floor(distancePercent);
 }
 
 // Проверка столкновений (только с препятствиями)
@@ -79,8 +80,9 @@ function checkCollisions() {
             girl.x + girl.width > obs.x &&
             girl.y + girl.height > obs.y &&
             girl.y < obs.y + obs.height) {
-            // Настик споткнулся! Мама догоняет
+            // Настик споткнулась! Запускаем анимацию погони
             gameRunning = false;
+            gameOverAnimation = true;
             return;
         }
     }
@@ -105,7 +107,7 @@ function draw() {
         ctx.fillStyle = '#8B4513';
     }
     
-    // Мама с ремнём (всегда позади, на одном месте)
+    // Мама с ремнём
     ctx.fillStyle = '#4A4A4A';
     ctx.fillRect(momX, 320, 35, 45);
     ctx.fillStyle = '#2C2C2C';
@@ -116,7 +118,7 @@ function draw() {
     ctx.fillRect(momX + 12, 315, 4, 4);
     ctx.fillRect(momX + 20, 315, 4, 4);
     
-    // Девочка (впереди)
+    // Девочка (если не в анимации проигрыша, может слегка наклониться)
     ctx.fillStyle = '#FF69B4';
     ctx.fillRect(girl.x, girl.y, girl.width, girl.height);
     ctx.fillStyle = '#FFB6C1';
@@ -126,8 +128,8 @@ function draw() {
     ctx.fillStyle = '#FFA500';
     ctx.fillRect(girl.x + 10, girl.y + 25, 10, 5);
     
-    // Текст "Game Over" (когда споткнулась)
-    if (!gameRunning) {
+    // Если игра окончена и анимация завершена — показываем текст
+    if (!gameRunning && !gameOverAnimation) {
         ctx.font = 'bold 32px system-ui';
         ctx.fillStyle = '#FF0000';
         ctx.fillText('GAME OVER', canvas.width/2 - 100, canvas.height/2);
@@ -148,6 +150,24 @@ function draw() {
 
 // Основной игровой цикл
 function updateGame() {
+    // Режим анимации проигрыша (мама бежит к девочке)
+    if (gameOverAnimation) {
+        // Мама быстро бежит к Настику
+        momX += 6;
+        
+        // Обновляем расстояние в UI
+        let distancePercent = Math.min(100, Math.max(0, ((girl.x - momX - 30) / 120) * 100));
+        document.getElementById('distance').textContent = Math.floor(distancePercent);
+        
+        // Когда мама догнала
+        if (momX + 35 >= girl.x - 10) {
+            gameOverAnimation = false;
+        }
+        
+        draw();
+        return;
+    }
+    
     if (!gameRunning) {
         draw();
         return;
