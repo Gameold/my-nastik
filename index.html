@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="referrer" content="origin">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Побег от мамы — VK Mini App</title>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -14,12 +12,15 @@
         <div class="game-container">
             <div class="game-header">
                 <div class="stat">🏃‍♀️ <span id="score">0</span></div>
+                <div class="stat">🏆 <span id="highScore">0</span></div>
                 <div class="stat">👩 <span id="distance">100</span>%</div>
             </div>
             
             <canvas id="gameCanvas"></canvas>
             
-            <button id="resetBtn">🔄 Начать заново</button>
+            <div class="buttons-container" style="display: flex; gap: 12px; justify-content: center; margin-top: 20px;">
+                <button id="resetBtn">🔄 Начать заново</button>
+            </div>
             <div class="tap-hint">👇 Нажми в любом месте экрана — прыжок</div>
         </div>
     </div>
