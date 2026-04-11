@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="referrer" content="origin">
+    <title>Мама и дочка — Убеги от ремня</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: #f2f3f5; /* VK light background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            padding: 16px;
+        }
+
+        /* Игровой контейнер — карточка в стиле VK */
+        .game-card {
+            background-color: #ffffff;
+            border-radius: 28px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+            max-width: 800px;
+            width: 100%;
+            transition: all 0.2s ease;
+        }
+
+        /* Хедер с рекордами и счетом */
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding: 16px 20px;
+            background: white;
+            border-bottom: 1px solid #e7e8ec;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .score-box, .record-box {
+            background: #f5f5f7;
+            padding: 6px 16px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: #222;
+        }
+
+        .score-box span, .record-box span {
+            color: #2688eb;
+            margin-right: 6px;
+            font-weight: 500;
+        }
+
+        .record-box {
+            background: #eef3ff;
+        }
+
+        /* Canvas область — игровое поле */
+        .canvas-wrapper {
+            display: flex;
+            justify-content: center;
+            background: #f8f9fc;
+            padding: 8px;
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            width: 100%;
+            height: auto;
+            background-color: #eef2f5;
+            border-radius: 20px;
+            cursor: pointer;
+            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05), 0 2px 6px rgba(0,0,0,0.05);
+        }
+
+        /* Управление и кнопки */
+        .controls {
+            padding: 16px 20px 20px;
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            background: white;
+            border-top: 1px solid #e7e8ec;
+        }
+
+        .vk-btn {
+            background-color: #2688eb;
+            border: none;
+            color: white;
+            font-weight: 600;
+            font-size: 1rem;
+            padding: 10px 20px;
+            border-radius: 60px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .vk-btn:active {
+            transform: scale(0.96);
+            opacity: 0.9;
+        }
+
+        .vk-btn.secondary {
+            background-color: #eef3ff;
+            color: #2688eb;
+            box-shadow: none;
+            border: 1px solid #cbd5e0;
+        }
+
+        .game-status {
+            background: white;
+            text-align: center;
+            padding: 6px 16px 16px;
+            font-size: 0.9rem;
+            color: #6c7886;
+        }
+
+        .jump-hint {
+            background: #f2f3f5;
+            border-radius: 20px;
+            padding: 6px 12px;
+            display: inline-block;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        @media (max-width: 550px) {
+            .stats {
+                padding: 12px 16px;
+            }
+            .score-box, .record-box {
+                font-size: 0.9rem;
+                padding: 4px 12px;
+            }
+            .vk-btn {
+                padding: 8px 16px;
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="game-card">
+    <div class="stats">
+        <div class="score-box"><span>🏃‍♀️</span> Очки: <span id="scoreValue">0</span></div>
+        <div class="record-box"><span>🏆</span> Рекорд: <span id="recordValue">0</span></div>
+    </div>
+    <div class="canvas-wrapper">
+        <canvas id="gameCanvas" width="800" height="400" style="width:100%; height:auto; max-width:800px; aspect-ratio:800/400"></canvas>
+    </div>
+    <div class="controls">
+        <button class="vk-btn" id="restartBtn">🔄 Новая игра</button>
+        <button class="vk-btn secondary" id="shareBtn">📤 Поделиться</button>
+    </div>
+    <div class="game-status">
+        <span class="jump-hint">⚡ Нажми Пробел / Тап по экрану — ПРЫЖОК!</span>
+        <div id="gameMessage" style="margin-top: 6px; font-weight: 500;">👩‍👧 Мама с ремнём близко! Прыгай через препятствия!</div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
+<script>
+    (function(){
+        // ---------- VK Bridge инициализация ----------
+        const vkBridge = window.vkBridge;
+        let vkReady = false;
+        let storageAvailable = false;
+
+        function initVKBridge() {
+            if (!vkBridge) {
+                console.warn("VK Bridge не загружен, игра работает без VK функций");
+                return;
+            }
+            vkBridge.send('VKWebAppInit')
+                .then(() => {
+                    console.log('VKWebAppInit успешно');
+                    vkReady = true;
+                    // проверяем возможность стораджа
+                    return vkBridge.send('VKWebAppStorageGet', { keys: ['mom_game_best_score'] });
+                })
+                .then((data) => {
+                    storageAvailable = true;
+                    // загружаем сохранённый рекорд из storage
+                    if (data && data.keys && data.keys.length > 0) {
+                        const stored = data.keys.find(k => k.key === 'mom_game_best_score');
+                        if (stored && stored.value) {
+                            let savedRecord = parseInt(stored.value, 10);
+                            if (!isNaN(savedRecord) && savedRecord > 0) {
+                                bestScore = savedRecord;
+                                updateRecordUI();
+                            }
+                        }
+                    }
+                    console.log("VK Storage рекорд загружен:", bestScore);
+                })
+                .catch((err) => {
+                    console.error("VK Bridge ошибка:", err);
+                    storageAvailable = false;
+                });
+        }
+        initVKBridge();
+
+        // Функция сохранения рекорда через VK Storage
+        function saveRecordToVK(score) {
+            if (!vkReady || !storageAvailable) return;
+            vkBridge.send('VKWebAppStorageSet', { key: 'mom_game_best_score', value: String(score) })
+                .catch(e => console.warn("Не удалось сохранить рекорд", e));
+        }
+
+        // ---------- Игровая логика ----------
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Размеры (фикс 800x400, но рендер масштабируется CSS)
+        const CANVAS_W = 800;
+        const CANVAS_H = 400;
+        canvas.width = CANVAS_W;
+        canvas.height = CANVAS_H;
+
+        // Игровые сущности
+        let gameRunning = true;
+        let score = 0;
+        let bestScore = 0;
+        
+        // Девочка (бегун)
+        const girl = {
+            x: 90,
+            y: 0,        // будет вычисляться относительно земли
+            width: 32,
+            height: 42,
+            yGround: CANVAS_H - 55,   // основание ног
+            isJumping: false,
+            yVelocity: 0,
+            gravity: 0.8,
+            jumpPower: -11,
+            color: "#FFB6C1", // розовый
+        };
+        girl.y = girl.yGround - girl.height;
+        
+        // Мама (преследователь) с ремнем
+        const mom = {
+            x: CANVAS_W - 80,
+            width: 36,
+            height: 48,
+            baseSpeed: 2.4,
+            currentSpeed: 2.4,
+            color: "#9370DB",
+            beltVisible: true
+        };
+        
+        // Препятствия (ящики, игрушки, стулья)
+        let obstacles = [];
+        const OBSTACLE_WIDTH = 24;
+        const OBSTACLE_HEIGHT = 28;
+        let spawnCounter = 0;
+        let spawnDelay = 75;  // фреймы между спавном (чем больше, тем реже)
+        
+        // Фоновая линия земли
+        const groundY = CANVAS_H - 45;
+        
+        // Инициализация / сброс игры
+        function resetGame() {
+            gameRunning = true;
+            score = 0;
+            updateScoreUI();
+            obstacles = [];
+            girl.isJumping = false;
+            girl.yVelocity = 0;
+            girl.y = girl.yGround - girl.height;
+            mom.x = CANVAS_W - 80;
+            mom.currentSpeed = mom.baseSpeed;
+            spawnCounter = 8; // быстрый первый спавн
+            document.getElementById('gameMessage').innerHTML = "👩‍👧 Беги! Прыгай через предметы, не дай маме догнать!";
+        }
+        
+        // Спавн препятствия (коробка/камень/игрушка)
+        function spawnObstacle() {
+            obstacles.push({
+                x: CANVAS_W,
+                y: groundY - OBSTACLE_HEIGHT,
+                width: OBSTACLE_WIDTH,
+                height: OBSTACLE_HEIGHT,
+                type: 'box'
+            });
+        }
+        
+        // Обновление счета
+        function updateScoreUI() {
+            document.getElementById('scoreValue').innerText = Math.floor(score);
+        }
+        
+        function updateRecordUI() {
+            document.getElementById('recordValue').innerText = bestScore;
+        }
+        
+        // Проверка рекорда и сохранение
+        function checkAndSetRecord() {
+            let intScore = Math.floor(score);
+            if (intScore > bestScore) {
+                bestScore = intScore;
+                updateRecordUI();
+                // сохранить через VK Storage
+                if (vkReady && storageAvailable) {
+                    saveRecordToVK(bestScore);
+                }
+            }
+        }
+        
+        // Коллизия девочки и препятствия (при приземлении или в прыжке)
+        function checkObstacleCollision() {
+            for (let i = 0; i < obstacles.length; i++) {
+                const obs = obstacles[i];
+                // AABB коллизия
+                if (girl.x < obs.x + obs.width &&
+                    girl.x + girl.width > obs.x &&
+                    girl.y < obs.y + obs.height &&
+                    girl.y + girl.height > obs.y) {
+                    // Столкновение с препятствием = проигрыш (мама догоняет?)
+                    // но по механике: если не перепрыгнула — мама догоняет. Считаем как проигрыш
+                    gameRunning = false;
+                    document.getElementById('gameMessage').innerHTML = "😭 Ой! Девочка споткнулась... Мама догнала с ремнём! Нажми «Новая игра»";
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+        // Проверка догонит ли мама девочку (дистанция)
+        function checkMomCatches() {
+            // Мама бежит слева направо? По задумке мама догоняет сзади? Но в игре мама справа, движется влево?
+            // Уточнение: мама пытается догнать девочку, изначально мама справа и движется влево. Девочка слева.
+            // Дистанция между ними: mom.x - (girl.x+girl.width). Если <= 0 => догнала.
+            const girlRight = girl.x + girl.width;
+            if (mom.x <= girlRight) {
+                gameRunning = false;
+                document.getElementById('gameMessage').innerHTML = "👩‍👧‍👦 Мама догнала! Ремень... Игра окончена. Начни заново!";
+                return true;
+            }
+            return false;
+        }
+        
+        // Обновление позиций
+        function updateGame() {
+            if (!gameRunning) return;
+            
+            // 1. Гравитация и прыжок
+            if (girl.isJumping) {
+                girl.yVelocity += girl.gravity;
+                girl.y += girl.yVelocity;
+                if (girl.y >= girl.yGround - girl.height) {
+                    girl.y = girl.yGround - girl.height;
+                    girl.isJumping = false;
+                    girl.yVelocity = 0;
+                }
+            }
+            
+            // 2. Движение мамы влево (догоняет)
+            mom.x -= mom.currentSpeed;
+            // если мама ушла за левый край — не страшно, но подтянем чуть для баланса
+            if (mom.x < 20) mom.x = 20;
+            
+            // 3. Препятствия: движение влево
+            for (let i=0; i<obstacles.length; i++) {
+                obstacles[i].x -= mom.currentSpeed; // та же скорость, что и у мамы (чтобы динамика)
+            }
+            obstacles = obstacles.filter(obs => obs.x + obs.width > 0);
+            
+            // 4. Спавн новых препятствий (рандом)
+            if (gameRunning) {
+                if (spawnCounter <= 0) {
+                    // вероятность спавна зависит от счета, но не чаще чем раз в 35-50 кадров
+                    if (Math.random() < 0.45) { 
+                        spawnObstacle();
+                    }
+                    spawnCounter = Math.max(35, 60 - Math.floor(score / 50));
+                } else {
+                    spawnCounter--;
+                }
+            }
+            
+            // 5. Увеличение очков (выживание время) и усложнение
+            if (gameRunning) {
+                score += 0.2;
+                updateScoreUI();
+                // Скорость мамы постепенно растет (сложность)
+                let newSpeed = mom.baseSpeed + (Math.floor(score) / 420);
+                mom.currentSpeed = Math.min(5.2, newSpeed);
+                // Проверяем рекорд
+                checkAndSetRecord();
+            }
+            
+            // 6. Коллизии с препятствиями (если столкнулся — game over)
+            const collided = checkObstacleCollision();
+            if (collided) return;
+            
+            // 7. Проверка догоняния мамой
+            checkMomCatches();
+        }
+        
+        // ---------- ОТРИСОВКА всего (стиль VK) ----------
+        function draw() {
+            ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+            
+            // Фон (светлый градиент)
+            const grad = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
+            grad.addColorStop(0, "#fef9e8");
+            grad.addColorStop(1, "#eef2f5");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+            
+            // Дорожка / земля
+            ctx.fillStyle = "#c0a16b";
+            ctx.fillRect(0, groundY, CANVAS_W, 6);
+            ctx.fillStyle = "#aa8c54";
+            ctx.fillRect(0, groundY+4, CANVAS_W, 4);
+            // трава
+            ctx.fillStyle = "#8bc34a";
+            ctx.fillRect(0, groundY-4, CANVAS_W, 5);
+            
+            // Препятствия (ящики/камни)
+            for (let obs of obstacles) {
+                // коробка с узором
+                ctx.fillStyle = "#b97f44";
+                ctx.shadowBlur = 0;
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+                ctx.fillStyle = "#9b5e2c";
+                ctx.fillRect(obs.x+4, obs.y+5, obs.width-8, 6);
+                ctx.fillStyle = "#e0a878";
+                ctx.fillRect(obs.x+6, obs.y+15, obs.width-12, 5);
+                ctx.fillStyle = "#5d3a1a";
+                ctx.fillRect(obs.x+2, obs.y+obs.height-6, obs.width-4, 3);
+            }
+            
+            // ----- Мама с ремнём (справа налево) -----
+            const momX = mom.x;
+            const momY = groundY - mom.height + 6;
+            // тело мамы
+            ctx.fillStyle = mom.color;
+            ctx.shadowBlur = 2;
+            ctx.fillRect(momX, momY, mom.width, mom.height);
+            // голова
+            ctx.fillStyle = "#ffdab9";
+            ctx.beginPath();
+            ctx.ellipse(momX+mom.width/2, momY-8, 14, 16, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = "#4a2512";
+            ctx.beginPath();
+            ctx.arc(momX+mom.width/2-5, momY-12, 2, 0, Math.PI*2);
+            ctx.arc(momX+mom.width/2+5, momY-12, 2, 0, Math.PI*2);
+            ctx.fill();
+            // недовольная бровь
+            ctx.beginPath();
+            ctx.moveTo(momX+8, momY-17);
+            ctx.lineTo(momX+15, momY-19);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#000";
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(momX+mom.width-8, momY-17);
+            ctx.lineTo(momX+mom.width-15, momY-19);
+            ctx.stroke();
+            
+            // РЕМЕНЬ в руке (красный/коричневый)
+            ctx.beginPath();
+            ctx.moveTo(momX+mom.width-8, momY+12);
+            ctx.lineTo(momX+mom.width+16, momY+20);
+            ctx.lineTo(momX+mom.width+12, momY+28);
+            ctx.fillStyle = "#b5651d";
+            ctx.fill();
+            ctx.fillStyle = "#8b4513";
+            ctx.fillRect(momX+mom.width-4, momY+14, 20, 6);
+            
+            // ----- Девочка (убегает)-----
+            const girlX = girl.x;
+            const girlY = girl.y;
+            ctx.fillStyle = girl.color;
+            ctx.fillRect(girlX, girlY, girl.width, girl.height);
+            // голова
+            ctx.fillStyle = "#FFE0BD";
+            ctx.beginPath();
+            ctx.ellipse(girlX+girl.width/2, girlY-6, 14, 15, 0, 0, Math.PI*2);
+            ctx.fill();
+            // волосы
+            ctx.fillStyle = "#8B5A2B";
+            ctx.beginPath();
+            ctx.ellipse(girlX+10, girlY-10, 8, 10, 0, 0, Math.PI*2);
+            ctx.ellipse(girlX+22, girlY-10, 8, 10, 0, 0, Math.PI*2);
+            ctx.fill();
+            // глазки
+            ctx.fillStyle = "#2c2c2c";
+            ctx.beginPath();
+            ctx.arc(girlX+10, girlY-8, 2, 0, Math.PI*2);
+            ctx.arc(girlX+22, girlY-8, 2, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = "white";
+            ctx.beginPath();
+            ctx.arc(girlX+9, girlY-9, 0.7, 0, Math.PI*2);
+            ctx.arc(girlX+21, girlY-9, 0.7, 0, Math.PI*2);
+            ctx.fill();
+            // ротик
+            ctx.beginPath();
+            ctx.arc(girlX+16, girlY-3, 4, 0.05, Math.PI - 0.05);
+            ctx.strokeStyle = "#b1542c";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            
+            // Платье
+            ctx.fillStyle = "#f06292";
+            ctx.fillRect(girlX+4, girlY+18, girl.width-8, 18);
+            
+            // Эффект прыжка (пыль)
+            if (girl.isJumping) {
+                ctx.fillStyle = "rgba(0,0,0,0.1)";
+                ctx.beginPath();
+                ctx.ellipse(girlX+16, girlY+girl.height-5, 6, 3, 0, 0, Math.PI*2);
+                ctx.fill();
+            }
+            
+            // если игра окончена - затемнение и надпись
+            if (!gameRunning) {
+                ctx.fillStyle = "rgba(0,0,0,0.6)";
+                ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+                ctx.font = "bold 26px system-ui, -apple-system";
+                ctx.fillStyle = "#ffffff";
+                ctx.shadowBlur = 0;
+                ctx.fillText("💔 ПОРАЖЕНИЕ", CANVAS_W/2-110, CANVAS_H/2-20);
+                ctx.font = "18px system-ui";
+                ctx.fillStyle = "#FFE0A3";
+                ctx.fillText("Нажми «Новая игра»", CANVAS_W/2-95, CANVAS_H/2+30);
+            }
+            
+            // Маленькая подсказка на canvas
+            ctx.font = "12px monospace";
+            ctx.fillStyle = "#5a626e";
+            ctx.fillText("Мама с ремнём →", momX-45, momY+20);
+        }
+        
+        // Прыжок (доступен только в игре)
+        function jump() {
+            if (!gameRunning) return;
+            // только если на земле
+            if (!girl.isJumping && girl.y >= girl.yGround - girl.height - 1) {
+                girl.isJumping = true;
+                girl.yVelocity = girl.jumpPower;
+                // звуков нет, но визуально приятно
+            }
+        }
+        
+        // Обработчики ввода (клик / тап / пробел)
+        function handleJumpAction(e) {
+            // предотвращаем скролл на пробел
+            if (e.type === 'keydown') {
+                if (e.code === 'Space' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    jump();
+                }
+            } else {
+                // клик/тап
+                jump();
+            }
+        }
+        
+        // Функция шаринга (поделиться результатом)
+        function shareResult() {
+            let currentScore = Math.floor(score);
+            let message = `Я набрал(а) ${currentScore} очков в игре «Мама и дочка»! 🏃‍♀️👩‍👧 Смогу больше? Попробуй и ты!`;
+            if (vkReady) {
+                vkBridge.send("VKWebAppShare", { link: window.location.href, attachment: message })
+                    .catch(e => {
+                        alert("Не удалось открыть шаринг, но результат: " + message);
+                    });
+            } else {
+                // fallback
+                alert("Поделиться: " + message + "\n(Скопируйте текст)");
+                navigator.clipboard?.writeText(message).catch(()=>{});
+            }
+        }
+        
+        // Цикл анимации
+        let animationId;
+        function gameLoop() {
+            updateGame();
+            draw();
+            animationId = requestAnimationFrame(gameLoop);
+        }
+        
+        // Перезапуск игры
+        function restartGame() {
+            resetGame();
+            // Дополнительно сбросить позицию мамы
+            mom.x = CANVAS_W - 80;
+            mom.currentSpeed = mom.baseSpeed;
+            obstacles = [];
+            spawnCounter = 6;
+            if (!gameRunning) gameRunning = true;
+        }
+        
+        // Привязка UI и старт
+        window.addEventListener('load', () => {
+            resetGame();
+            updateRecordUI();
+            gameLoop();
+            
+            // События
+            canvas.addEventListener('click', (e) => {
+                e.preventDefault();
+                jump();
+            });
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                jump();
+            });
+            window.addEventListener('keydown', handleJumpAction);
+            document.getElementById('restartBtn').addEventListener('click', () => {
+                restartGame();
+            });
+            document.getElementById('shareBtn').addEventListener('click', () => {
+                shareResult();
+            });
+            // для мобильных предотвращаем скролл при касании canvas
+            canvas.addEventListener('touchstart', (e) => { e.preventDefault(); jump(); }, {passive: false});
+        });
+    })();
+</script>
+</body>
+</html>
