@@ -1,6 +1,5 @@
 console.log('🟢 Скрипт запущен');
 
-// Размеры холста
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -12,7 +11,6 @@ function resizeCanvas() {
     canvas.height = 800;
 }
 
-// Игровые переменные
 let gameRunning = true;
 let gameOverAnimation = false;
 let score = 0;
@@ -31,20 +29,41 @@ let obstacleCooldown = 0;
 let girlCurrentFrame = 0;
 let girlAnimationCounter = 0;
 
-// ID таблицы рекордов
+// ID таблицы рекордов (должен совпадать с созданным)
 const LEADERBOARD_ID = 'score';
 
-// Функция сохранения рекорда
+// ПРОВЕРКА ПОДДЕРЖКИ МЕТОДА
+async function checkMethodSupport(methodName) {
+    try {
+        const supported = await vkBridge.send("VKWebAppGetSupportedMethods");
+        console.log(`📋 Поддерживаемые методы:`, supported);
+        return supported.includes(methodName);
+    } catch (e) {
+        console.error('Ошибка проверки методов:', e);
+        return false;
+    }
+}
+
+// СОХРАНЕНИЕ РЕКОРДА (с альтернативными методами)
 async function saveScore(scoreValue) {
     console.log('💾 Попытка сохранить рекорд:', scoreValue);
     
     if (!window.vkBridge) {
         console.log('⚠️ VK Bridge не найден');
-        alert('VK Bridge не найден. Запустите игру в приложении VK');
+        alert('Запустите игру в приложении VK');
+        return false;
+    }
+    
+    // Проверяем поддержку метода
+    const isSupported = await checkMethodSupport('VKWebAppAddToLeaderboard');
+    if (!isSupported) {
+        console.log('⚠️ Метод VKWebAppAddToLeaderboard не поддерживается');
+        alert('Таблица рекордов не настроена. Проверьте настройки приложения в VK');
         return false;
     }
     
     try {
+        // Основной метод
         const result = await vkBridge.send("VKWebAppAddToLeaderboard", {
             score: scoreValue,
             leaderboard_id: LEADERBOARD_ID
@@ -54,12 +73,27 @@ async function saveScore(scoreValue) {
         return true;
     } catch (error) {
         console.error('❌ Ошибка сохранения:', error);
-        alert('Ошибка сохранения рекорда: ' + (error.message || 'неизвестная ошибка'));
-        return false;
+        
+        // Пробуем альтернативный метод (если есть)
+        try {
+            console.log('🔄 Пробуем альтернативный метод...');
+            const result2 = await vkBridge.send("VKWebAppAddToLeaderboard", {
+                score: scoreValue,
+                leaderboard_id: LEADERBOARD_ID,
+                user_result: scoreValue
+            });
+            console.log('✅ Альтернативный метод сработал!', result2);
+            alert(`✅ Рекорд ${scoreValue} сохранён!`);
+            return true;
+        } catch (error2) {
+            console.error('❌ Альтернативный метод тоже не сработал:', error2);
+            alert('Ошибка: таблица рекордов не настроена. Создайте таблицу в настройках приложения VK');
+            return false;
+        }
     }
 }
 
-// Функция показа таблицы
+// ПОКАЗ ТАБЛИЦЫ РЕКОРДОВ
 async function showLeaderboard() {
     console.log('📊 Открытие таблицы рекордов...');
     
@@ -74,11 +108,11 @@ async function showLeaderboard() {
         });
     } catch (error) {
         console.error('❌ Ошибка открытия таблицы:', error);
-        alert('Таблица рекордов пока пустая. Сыграйте и установите рекорд!');
+        alert('Таблица рекордов пока недоступна. Проверьте настройки приложения');
     }
 }
 
-// Функция получения лучшего результата игрока
+// ПОЛУЧЕНИЕ ЛИЧНОГО РЕКОРДА
 async function getMyBestScore() {
     if (!window.vkBridge) return 0;
     
@@ -108,22 +142,11 @@ function jump() {
 
 async function resetGame() {
     const finalScore = Math.floor(score);
-    console.log('🔄 Сброс игры. Текущий счёт:', finalScore, 'Личный рекорд:', highScore);
+    console.log('🔄 Сброс игры. Счёт:', finalScore);
     
-    // Сохраняем рекорд если есть
-    if (finalScore > 0) {
-        if (finalScore > highScore) {
-            console.log('🏆 НОВЫЙ РЕКОРД! Сохраняем...');
-            highScore = finalScore;
-            await saveScore(finalScore);
-        } else {
-            console.log('Рекорд не побит');
-            // Всё равно сохраняем для теста (уберем потом)
-            if (finalScore >= 5) {
-                console.log('📝 Тестовое сохранение');
-                await saveScore(finalScore);
-            }
-        }
+    if (finalScore > 0 && finalScore > highScore) {
+        highScore = finalScore;
+        await saveScore(finalScore);
     }
     
     gameRunning = true;
@@ -161,18 +184,17 @@ function checkCollisions() {
             gameOverAnimation = true;
             girl.state = 'fall';
             console.log('💥 ИГРА ОКОНЧЕНА! Счёт:', Math.floor(score));
-            // Сохраняем рекорд сразу при столкновении
+            // Сохраняем рекорд
             saveCurrentScore();
             return;
         }
     }
 }
 
-// Отдельная функция для сохранения текущего счёта
 async function saveCurrentScore() {
     const currentScore = Math.floor(score);
-    if (currentScore > 0) {
-        console.log('💾 Сохраняем счёт:', currentScore);
+    if (currentScore > 0 && currentScore > highScore) {
+        highScore = currentScore;
         await saveScore(currentScore);
     }
 }
@@ -180,14 +202,12 @@ async function saveCurrentScore() {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Небо
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
     gradient.addColorStop(0, '#87CEEB');
     gradient.addColorStop(0.6, '#E0F7FA');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Облака
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.beginPath();
     ctx.ellipse(80, 80, 50, 35, 0, 0, Math.PI*2);
@@ -198,13 +218,11 @@ function draw() {
     ctx.ellipse(540, 105, 45, 32, 0, 0, Math.PI*2);
     ctx.fill();
     
-    // Земля
     ctx.fillStyle = '#8B5A2B';
     ctx.fillRect(0, 670, canvas.width, 130);
     ctx.fillStyle = '#6B8E23';
     ctx.fillRect(0, 665, canvas.width, 15);
     
-    // Препятствия
     ctx.fillStyle = '#8B4513';
     for (let obs of obstacles) {
         ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
@@ -213,7 +231,6 @@ function draw() {
         ctx.fillStyle = '#8B4513';
     }
     
-    // Мама
     if (gameOverAnimation && !gameRunning) {
         ctx.fillStyle = '#DC143C';
         ctx.fillRect(momX, 610, 50, 65);
@@ -234,7 +251,6 @@ function draw() {
         ctx.fillRect(momX + 28, 600, 6, 6);
     }
     
-    // Девочка
     ctx.fillStyle = '#FF69B4';
     ctx.fillRect(girl.x, girl.y, girl.width, girl.height);
     ctx.fillStyle = '#FFB6C1';
@@ -257,7 +273,6 @@ function draw() {
         }
     }
     
-    // Game Over
     if (!gameRunning && !gameOverAnimation) {
         ctx.font = 'bold 36px system-ui';
         ctx.fillStyle = '#FF0000';
@@ -293,7 +308,6 @@ function updateGame() {
         return;
     }
     
-    // Прыжок
     if (girl.isJumping) {
         girl.yVelocity += girl.gravity;
         girl.y += girl.yVelocity;
@@ -305,7 +319,6 @@ function updateGame() {
         }
     }
     
-    // Движение препятствий
     for (let i = 0; i < obstacles.length; i++) {
         obstacles[i].x -= 6;
         if (obstacles[i].x + obstacles[i].width < 0) {
@@ -314,7 +327,6 @@ function updateGame() {
         }
     }
     
-    // Генерация препятствий
     if (obstacleCooldown <= 0 && gameRunning) {
         if (Math.random() < 0.028) {
             spawnObstacle();
@@ -330,7 +342,6 @@ function updateGame() {
     draw();
 }
 
-// Обработка касаний
 function handleTap(e) {
     const target = e.target;
     if (target.id === 'resetBtn') return;
@@ -339,7 +350,6 @@ function handleTap(e) {
     jump();
 }
 
-// Добавляем кнопку рекордов
 function addLeaderboardButton() {
     const container = document.querySelector('.buttons-container');
     if (document.getElementById('leaderboardBtn')) return;
@@ -361,7 +371,6 @@ function addLeaderboardButton() {
     console.log('🔘 Кнопка рекордов добавлена');
 }
 
-// События
 canvas.addEventListener('touchstart', handleTap, { passive: false });
 canvas.addEventListener('mousedown', handleTap);
 window.addEventListener('keydown', (e) => {
@@ -377,11 +386,9 @@ document.getElementById('resetBtn').addEventListener('touchstart', (e) => {
 window.addEventListener('resize', () => resizeCanvas());
 resizeCanvas();
 
-// Запуск VK Bridge и игры
 async function initVK() {
-    console.log('🟢 Инициализация...');
+    console.log('🟢 Инициализация VK Bridge...');
     
-    // Ждём vkBridge
     let waitCount = 0;
     while (!window.vkBridge && waitCount < 50) {
         await new Promise(r => setTimeout(r, 100));
@@ -393,15 +400,13 @@ async function initVK() {
         try {
             await vkBridge.send('VKWebAppInit');
             console.log('✅ VK Bridge инициализирован');
-            
-            // Загружаем личный рекорд
             highScore = await getMyBestScore();
             console.log('🏆 Загруженный рекорд:', highScore);
         } catch (err) {
             console.error('❌ Ошибка VK Bridge:', err);
         }
     } else {
-        console.log('⚠️ VK Bridge не найден через 5 секунд');
+        console.log('⚠️ VK Bridge не найден');
     }
     
     updateUI();
