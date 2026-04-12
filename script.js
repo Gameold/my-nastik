@@ -10,7 +10,6 @@ function resizeCanvas() {
     canvas.style.height = `${maxWidth * 1.33}px`;
     canvas.width = 600;
     canvas.height = 800;
-    console.log('📐 Холст изменён:', canvas.width, 'x', canvas.height);
 }
 
 // Игровые переменные
@@ -37,35 +36,65 @@ const LEADERBOARD_ID = 'score';
 
 // Функция сохранения рекорда
 async function saveScore(scoreValue) {
+    console.log('💾 Попытка сохранить рекорд:', scoreValue);
+    
     if (!window.vkBridge) {
-        console.log('⚠️ VK Bridge не найден, рекорд не сохранён');
-        return;
+        console.log('⚠️ VK Bridge не найден');
+        alert('VK Bridge не найден. Запустите игру в приложении VK');
+        return false;
     }
+    
     try {
-        await vkBridge.send("VKWebAppAddToLeaderboard", {
+        const result = await vkBridge.send("VKWebAppAddToLeaderboard", {
             score: scoreValue,
             leaderboard_id: LEADERBOARD_ID
         });
-        console.log('✅ Рекорд сохранён:', scoreValue);
+        console.log('✅ Рекорд сохранён!', result);
+        alert(`✅ Рекорд ${scoreValue} сохранён!`);
+        return true;
     } catch (error) {
         console.error('❌ Ошибка сохранения:', error);
+        alert('Ошибка сохранения рекорда: ' + (error.message || 'неизвестная ошибка'));
+        return false;
     }
 }
 
 // Функция показа таблицы
 async function showLeaderboard() {
+    console.log('📊 Открытие таблицы рекордов...');
+    
     if (!window.vkBridge) {
         alert('VK Bridge не инициализирован');
         return;
     }
+    
     try {
         await vkBridge.send("VKWebAppShowLeaderboard", {
             leaderboard_id: LEADERBOARD_ID
         });
     } catch (error) {
         console.error('❌ Ошибка открытия таблицы:', error);
-        alert('Таблица рекордов пока пустая');
+        alert('Таблица рекордов пока пустая. Сыграйте и установите рекорд!');
     }
+}
+
+// Функция получения лучшего результата игрока
+async function getMyBestScore() {
+    if (!window.vkBridge) return 0;
+    
+    try {
+        const data = await vkBridge.send("VKWebAppGetLeaderboardExtended", {
+            leaderboard_id: LEADERBOARD_ID,
+            count: 1
+        });
+        if (data.users && data.users.length > 0) {
+            console.log('🏆 Личный рекорд из VK:', data.users[0].score);
+            return data.users[0].score;
+        }
+    } catch (error) {
+        console.error('Ошибка получения рекорда:', error);
+    }
+    return 0;
 }
 
 function jump() {
@@ -74,15 +103,27 @@ function jump() {
         girl.yVelocity = girl.jumpPower;
         girl.isJumping = true;
         girl.state = 'jump';
-        console.log('🦘 Прыжок');
     }
 }
 
-function resetGame() {
+async function resetGame() {
     const finalScore = Math.floor(score);
-    if (finalScore > highScore && finalScore > 0) {
-        highScore = finalScore;
-        saveScore(finalScore);
+    console.log('🔄 Сброс игры. Текущий счёт:', finalScore, 'Личный рекорд:', highScore);
+    
+    // Сохраняем рекорд если есть
+    if (finalScore > 0) {
+        if (finalScore > highScore) {
+            console.log('🏆 НОВЫЙ РЕКОРД! Сохраняем...');
+            highScore = finalScore;
+            await saveScore(finalScore);
+        } else {
+            console.log('Рекорд не побит');
+            // Всё равно сохраняем для теста (уберем потом)
+            if (finalScore >= 5) {
+                console.log('📝 Тестовое сохранение');
+                await saveScore(finalScore);
+            }
+        }
     }
     
     gameRunning = true;
@@ -96,7 +137,6 @@ function resetGame() {
     girl.state = 'run';
     obstacleCooldown = 10;
     updateUI();
-    console.log('🔄 Игра сброшена');
 }
 
 function spawnObstacle() {
@@ -120,9 +160,20 @@ function checkCollisions() {
             gameRunning = false;
             gameOverAnimation = true;
             girl.state = 'fall';
-            console.log('💥 Столкновение! Счёт:', Math.floor(score));
+            console.log('💥 ИГРА ОКОНЧЕНА! Счёт:', Math.floor(score));
+            // Сохраняем рекорд сразу при столкновении
+            saveCurrentScore();
             return;
         }
+    }
+}
+
+// Отдельная функция для сохранения текущего счёта
+async function saveCurrentScore() {
+    const currentScore = Math.floor(score);
+    if (currentScore > 0) {
+        console.log('💾 Сохраняем счёт:', currentScore);
+        await saveScore(currentScore);
     }
 }
 
@@ -327,23 +378,36 @@ window.addEventListener('resize', () => resizeCanvas());
 resizeCanvas();
 
 // Запуск VK Bridge и игры
-console.log('🟢 Инициализация VK Bridge...');
-
-// Ждём загрузки vkBridge
-function initVK() {
+async function initVK() {
+    console.log('🟢 Инициализация...');
+    
+    // Ждём vkBridge
+    let waitCount = 0;
+    while (!window.vkBridge && waitCount < 50) {
+        await new Promise(r => setTimeout(r, 100));
+        waitCount++;
+    }
+    
     if (window.vkBridge) {
         console.log('✅ VK Bridge найден');
-        window.vkBridge.send('VKWebAppInit')
-            .then(() => console.log('✅ VK Bridge инициализирован'))
-            .catch(err => console.error('❌ Ошибка VK Bridge:', err));
+        try {
+            await vkBridge.send('VKWebAppInit');
+            console.log('✅ VK Bridge инициализирован');
+            
+            // Загружаем личный рекорд
+            highScore = await getMyBestScore();
+            console.log('🏆 Загруженный рекорд:', highScore);
+        } catch (err) {
+            console.error('❌ Ошибка VK Bridge:', err);
+        }
     } else {
-        console.log('⏳ Ждём vkBridge...');
-        setTimeout(initVK, 100);
+        console.log('⚠️ VK Bridge не найден через 5 секунд');
     }
+    
+    updateUI();
+    addLeaderboardButton();
+    resetGame();
 }
 
 initVK();
-
-resetGame();
-addLeaderboardButton();
 setInterval(updateGame, 1000 / 60);
