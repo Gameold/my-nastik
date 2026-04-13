@@ -31,32 +31,36 @@ let obstacleCooldown = 0;
 let girlCurrentFrame = 0;
 let girlAnimationCounter = 0;
 
-// ID таблицы рекордов (создай в настройках приложения!)
+// ПРАВИЛЬНЫЙ ID для таблицы (как в настройках)
 const LEADERBOARD_ID = 'score';
 
-// Сохранение рекорда
+// СОХРАНЕНИЕ РЕКОРДА (правильный метод)
 async function saveScoreToLeaderboard(scoreValue) {
     console.log('💾 Сохраняем рекорд:', scoreValue);
     
     if (!window.vkBridge) {
         console.log('⚠️ VK Bridge не найден');
+        alert('Игра должна быть открыта в приложении VK');
         return false;
     }
     
     try {
+        // Используем правильный метод VKWebAppAddToLeaderboard
         const result = await vkBridge.send("VKWebAppAddToLeaderboard", {
-            score: scoreValue,
-            leaderboard_id: LEADERBOARD_ID
+            score: scoreValue,           // количество очков
+            leaderboard_id: LEADERBOARD_ID  // ID таблицы
         });
         console.log('✅ Рекорд сохранён!', result);
+        alert(`🎉 Новый рекорд: ${scoreValue} очков!`);
         return true;
     } catch (error) {
         console.error('❌ Ошибка сохранения:', error);
+        alert('Ошибка сохранения рекорда. Проверь настройки таблицы в VK');
         return false;
     }
 }
 
-// Показать таблицу рекордов
+// ПОКАЗ ТАБЛИЦЫ РЕКОРДОВ (правильный метод)
 async function showLeaderboard() {
     console.log('📊 Открываем таблицу рекордов');
     
@@ -66,16 +70,17 @@ async function showLeaderboard() {
     }
     
     try {
+        // Используем правильный метод VKWebAppShowLeaderboard
         await vkBridge.send("VKWebAppShowLeaderboard", {
             leaderboard_id: LEADERBOARD_ID
         });
     } catch (error) {
-        console.error('❌ Ошибка открытия:', error);
-        alert('Таблица рекордов пока пустая. Сыграй и установи рекорд!');
+        console.error('❌ Ошибка открытия таблицы:', error);
+        alert('Таблица рекордов пока недоступна. Убедись, что в настройках приложения создана таблица с кодом "score"');
     }
 }
 
-// Получить личный рекорд
+// ПОЛУЧЕНИЕ ЛИЧНОГО РЕКОРДА
 async function getMyBestScore() {
     if (!window.vkBridge) return 0;
     
@@ -85,7 +90,7 @@ async function getMyBestScore() {
             count: 1
         });
         if (data.users && data.users.length > 0) {
-            console.log('🏆 Личный рекорд:', data.users[0].score);
+            console.log('🏆 Личный рекорд из VK:', data.users[0].score);
             return data.users[0].score;
         }
     } catch (error) {
@@ -108,6 +113,7 @@ async function resetGame() {
     const finalScore = Math.floor(score);
     console.log('🔄 Сброс игры. Счёт:', finalScore, 'Рекорд:', highScore);
     
+    // Сохраняем рекорд если побит
     if (finalScore > highScore && finalScore > 0) {
         console.log('🏆 НОВЫЙ РЕКОРД!');
         highScore = finalScore;
